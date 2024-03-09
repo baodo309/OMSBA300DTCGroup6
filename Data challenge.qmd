@@ -1,0 +1,100 @@
+---
+title: "Untitled"
+format: docx
+editor: visual
+---
+
+## Retail needs to worry about who has money to spend - what has changed about who is working and earning money?
+
+Given the research question "Retail needs to worry about who has money to spend - what has changed about who is working and earning money?"This analysis aims to dissect the dynamics of employment and income in the context of potentially shifting consumer and purchase power bases for the retail industry, especially in light of the COVID-19 pandemic. To answer the questions thoroughly, the analysis is structured to examine both individual (people level) and sector-wide (industry level) perspectives. This approach will enable a detailed exploration of how employment status, income variations, and industry-specific trends collectively impact consumer spending and the income market landscape. 
+
+To understand how COVID-19 has affected people's earnings, a Different in Different model is employed to reveal whether individuals experienced a change in income before and after COVID. This model uses control variables such as demographic variables (age, sex and race) along with employment status to measure the impact on income across different groups. The "Retail Trade" industry is designated as the treatment group, which allows for a direct assessment of how this sector has been impacted compared to others. We utilize the post-treatment variable to distinguish between the periods before and after COVID-19. This allows for comparisons between pre-COVID and pandemic era periods.
+
+```{r}
+if (!require("ipumsr")) stop("Reading IPUMS data into R requires the ipumsr package. It can be installed using the following command: install.packages('ipumsr')")
+library(rio)
+library(dplyr)
+library(tidyverse)
+library(vtable)
+library(fixest)
+
+ddi <- read_ipums_ddi("cps_00001.xml")
+data <- read_ipums_micro(ddi)
+industry_df <- import('indnames.csv')
+
+df_final<- data %>% inner_join( industry_df, by = c("IND"="ind")) %>%  
+  filter(YEAR >= 2018,!is.na(INCTOT))
+```
+
+Visualization
+
+```{r}
+
+#Create a plot to compare the average income between Retail Trade and Other Industries
+df_final$group <- ifelse(df_final$treated_group == 1, "Retail Trade", "Other Industries")
+
+
+avg_income_by_group_year <- df_final %>%
+  group_by(group, YEAR) %>%
+  summarise(mean_income = mean(INCTOT, na.rm = TRUE)) %>%
+  ungroup()
+
+# Avergae Income Plot
+ggplot(avg_income_by_group_year, aes(x = YEAR, y = mean_income, color = group)) +
+  geom_line() +
+  geom_vline(xintercept = 2020, linetype="dashed", color = "red")+
+  labs(title = "Difference-in-Differences: Average Income by Industry",
+       x = "Year",
+       y = "Average Income",
+       color = "Group") +
+  theme_minimal()
+
+
+# Calculate employment counts by group and year
+employment_counts_by_group_year <- df_final %>%
+  filter(EMPSTAT == "Employed") %>%
+  group_by(YEAR) %>%
+  summarise(count_employed = n(), .groups = 'drop') %>%
+  ungroup()
+
+# Plot
+ggplot(employment_counts_by_group_year, aes(x = YEAR, y = count_employed)) +
+  geom_line() +
+  geom_vline(xintercept = 2020, linetype="dashed", color = "red")+
+  geom_point() + # Adding points for clarity
+  labs(title = "Employment Numbers Over Time by Industry",
+       x = "Year",
+       y = "Count of Employed Individuals",
+       color = "Group") +
+  theme_minimal()
+```
+
+This graph  likely shows a downward trend in the number of employed individuals over time. Both Pre Covid and post Covid have affected the employment market negatively. Consequently, numerous individuals have lost their jobs or faced layoffs. This leads to a potential decrease in spending power. Although there is a noted increase in average income after the onset of COVID, this growth must be contextualized with the rising inflation rates, economic challenges, and shortages of food and goods, all of which pose significant obstacles to consumer spending capabilities.
+
+```{r}
+df_final <- df_final %>%
+  mutate(post_treatment = YEAR >= 2020) %>%
+  group_by(CPSIDV, YEAR) %>%
+  mutate(mean_income = mean(INCTOT, na.rm = TRUE)) %>% ungroup()
+
+df_final$SEX <- ifelse(df_final$SEX == 1, "Male", "Female")
+df_final$RACE <- ifelse(df_final$RACE == 100, "White",
+                                ifelse(df_final$RACE == 200, "Black",
+                                       ifelse(df_final$RACE == 651, "Asian", "Other")))
+
+df_final$EMPSTAT <- ifelse(df_final$EMPSTAT >= 20, "Unemployed", "Employed")
+unique(df_final$RACE)
+
+
+#Diff in Diff Model
+
+df_final$treated_group <- ifelse(df_final$indname == "Retail Trade", 1, 0)
+
+# Run the DiD model with an interaction between treated_group and post_treatment
+dif_in_dif_model <- feols(INCTOT ~ treated_group * post_treatment + AGE + SEX + factor(RACE) + factor(EMPSTAT)| SERIAL, data = df_final)
+
+# View the summary of the model
+etable(dif_in_dif_model)
+```
+
+According to the table, there are statistically significant relationships between various factors and income changes, before and after the pandemic. employees in the retail sector experienced an average income reduction of \$10,564  compared to the other industries, before the pandemic. This indicates that the retail employee has the pre-pandemic challenges faced. After the COVID, the income increased by \$9,280 for the entire sample, suggesting an overall positive effect of COVID impact on income. Furthermore, demographics act as a positive determinant of income. For each additional year of age, the income increases by \$1,271, holding all else constant. Male individuals earn significantly more, with an average income increase of \$21,379.8 compared to females. In terms of racial comparisons with the Asian demographic, Black individuals earn \$25,138.1 less, those classified as Other \$21,336.9 less, and White individuals \$11,865.3 less. Yet, being unemployed compared to the employed baseline category is associated with a \$31,255 decrease in income, highlighting the severe economic impact of job loss. On average, individuals in the retail sector experienced an additional income decrease of \$3,181 after COVID-19 compared to those in other sectors. 
